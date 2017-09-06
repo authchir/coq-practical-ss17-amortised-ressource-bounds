@@ -177,19 +177,19 @@ Inductive val : Type :=
 
 (* Definition 4.6 *)
 Definition stack := var -> val.
-Definition heap := loc -> val.
+Definition heap := loc -> option val.
 
 Definition stack_empty : stack := fun _ => vnull.
-Definition heap_empty : heap := fun _ => vnull.
+Definition heap_empty : heap := fun _ => None.
 
 Definition stack_add (s : stack) (p : var * val) :=
   fun y => let (x, v) := p in if string_dec x y then v else s y.
 
 Definition heap_add (h : heap) (p : loc * val) :=
-  fun y => let (x, v) := p in if Nat.eqb x y then v else h y.
+  fun y => let (x, v) := p in if Nat.eqb x y then Some v else h y.
 
 Definition heap_remove (h : heap) (l : loc) :=
-  heap_add h (l, vnull).
+  fun y => if Nat.eqb l y then None else h y.
 
 Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
 | eval_unit :  forall p s h,
@@ -209,11 +209,12 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
     eval p s h (elet x e1 e2) v h'
 
 | eval_fun : forall (p : program) (s : stack) h f ys ef xs vs v s' h',
-    vs = (Vector.map s xs) ->
+    vs = Vector.map s xs ->
     p f = (ys, ef) ->
     s' = Vector.fold_left stack_add stack_empty
       (Vector.map2 pair (Vector.of_list ys) vs) ->
-    eval p s' h ef v h' -> eval p s h (eapp f xs) v h'
+    eval p s' h ef v h' ->
+    eval p s h (eapp f xs) v h'
 
 | eval_if_true : forall p s h h' x et ef v,
     s x = vtt -> eval p s h et v h' ->
@@ -234,31 +235,31 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
 
 | eval_sum_inl : forall p s h x w l,
     w = vpair vtt (s x) ->
-    h l = vnull ->
+    h l = None ->
     eval p s h (esum_inl x) (vloc l) (heap_add h (l, w))
 
 | eval_sum_inr : forall p s h x w l,
     w = vpair vff (s x) ->
-    h l = vnull ->
+    h l = None ->
     eval p s h (esum_inr x) (vloc l) (heap_add h (l, w))
 
 | eval_sum_match_inl : forall p s h h' l x y z w el er v,
-    s x = vloc l -> h l = vpair vtt w ->
+    s x = vloc l -> h l = Some (vpair vtt w) ->
     eval p (stack_add s (y, w)) h el v h' ->
     eval p s h (esum_match x (y, el) (z, er)) v h'
 
 | eval_sum_match_elim_inl : forall p s h h' l x y z w el er v,
-    s x = vloc l -> h l = vpair vtt w ->
+    s x = vloc l -> h l = Some (vpair vtt w) ->
     eval p (stack_add s (y, w)) (heap_add h (l, vbad)) el v h' ->
     eval p s h (esum_match_elim x (y, el) (z, er)) v h'
 
 | eval_sum_match_inr : forall p s h h' l x y z w el er v,
-    s x = vloc l -> h l = vpair vff w ->
+    s x = vloc l -> h l = Some (vpair vff w) ->
     eval p (stack_add s (z, w)) h er v h' ->
     eval p s h (esum_match x (y, el) (z, er)) v h'
 
 | eval_sum_match_elim_inr : forall p s h h' l x y z w el er v,
-    s x = vloc l -> h l = vpair vff w ->
+    s x = vloc l -> h l = Some (vpair vff w) ->
     eval p (stack_add s (z, w)) (heap_add h (l, vbad)) er v h' ->
     eval p s h (esum_match_elim x (y, el) (z, er)) v h'
 
@@ -267,7 +268,7 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
 
 | eval_list_cons : forall p s h l w xh xt,
     w = vpair (s xh) (s xt) ->
-    h l = vnull ->
+    h l = None ->
     eval p s h (elist_cons xh xt) (vloc l) (heap_add h (l, w))
 
 | eval_list_match_nil : forall p s h h' x xh xt e1 e2 v,
@@ -282,13 +283,13 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
 
 | eval_list_match_cons : forall p s h h' l x xh xt wh wt e1 e2 v,
     s x = vloc l ->
-    h l = vpair wh wt ->
+    h l = Some (vpair wh wt) ->
     eval p (stack_add (stack_add s (xh, wh)) (xt, wt)) h e2 v h' ->
     eval p s h (elist_match x e1 (xh, xt, e2)) v h'
 
 | eval_list_match_elim_cons : forall p s s' h h' l x xh xt wh wt e1 e2 v,
     s x = vloc l ->
-    h l = vpair wh wt ->
+    h l = Some (vpair wh wt) ->
     s' = stack_add (stack_add s (xh, wh)) (xt, wt) ->
     eval p s' (heap_add h (l, vbad)) e2 v h' ->
     eval p s h (elist_match x e1 (xh, xt, e2)) v h'
@@ -297,14 +298,14 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
 (* Lemma 4.8 *)
 Lemma heap_stability : forall p s h e v h' l,
   eval p s h e v h' ->
-  h l <> vnull ->
-  h' l = h l \/ h' l = vbad.
+  h l <> None ->
+  h' l = h l \/ h' l = Some vbad.
 Proof.
   intros p s h e v h' l H1. induction H1; try assumption; try (left; reflexivity).
   - (* eval_let *)
     intro H2. destruct (IHeval1 H2) as [H3 | H3].
     + rewrite <- H3. apply IHeval2. rewrite H3. apply H2.
-    + assert (H4 : h0 l <> vnull).
+    + assert (H4 : h0 l <> None).
       { intro contra. rewrite H3 in contra. inversion contra. }
       apply IHeval2 in H4. destruct H4 as [H4 | H4].
       * right. rewrite H4. rewrite H3. reflexivity.
@@ -320,12 +321,12 @@ Proof.
   - (* eval_sum_match_inl *)
     intro H2. destruct (Nat.eqb l0 l) eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb. subst.
-      assert (H3 : heap_add h (l, vbad) l <> vnull).
+      assert (H3 : heap_add h (l, vbad) l <> None).
       { unfold heap_add. rewrite Nat.eqb_refl. intro contra. inversion contra. }
       apply IHeval in H3. destruct H3 as [H3 | H3].
       * rewrite H3. simpl. rewrite Nat.eqb_refl. right. reflexivity.
       * right. rewrite H3. reflexivity.
-    + assert (H3 : heap_add h (l0, vbad) l <> vnull).
+    + assert (H3 : heap_add h (l0, vbad) l <> None).
       { unfold heap_add. rewrite Heqb. assumption. }
       apply IHeval in H3. destruct H3 as [H3 | H3].
       * left. rewrite H3. unfold heap_add. rewrite Heqb. reflexivity.
@@ -333,12 +334,12 @@ Proof.
   - (* eval_sum_match_inr *)
     intro H2. destruct (Nat.eqb l0 l) eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb. subst.
-      assert (H3 : heap_add h (l, vbad) l <> vnull).
+      assert (H3 : heap_add h (l, vbad) l <> None).
       { unfold heap_add. rewrite Nat.eqb_refl. intro contra. inversion contra. }
       apply IHeval in H3. destruct H3 as [H3 | H3].
       * rewrite H3. simpl. rewrite Nat.eqb_refl. right. reflexivity.
       * right. rewrite H3. reflexivity.
-    + assert (H3 : heap_add h (l0, vbad) l <> vnull).
+    + assert (H3 : heap_add h (l0, vbad) l <> None).
       { unfold heap_add. rewrite Heqb. assumption. }
       apply IHeval in H3. destruct H3 as [H3 | H3].
       * left. rewrite H3. unfold heap_add. rewrite Heqb. reflexivity.
@@ -350,12 +351,12 @@ Proof.
   - (* eval_list_match_cons *)
     intro H3. destruct (Nat.eqb l0 l) eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb. subst l0.
-      assert (H4 : heap_add h (l, vbad) l <> vnull).
+      assert (H4 : heap_add h (l, vbad) l <> None).
       { unfold heap_add. rewrite Nat.eqb_refl. intro contra. inversion contra. }
       apply IHeval in H4. destruct H4 as [H4 | H4].
       * right. rewrite H4. simpl. rewrite Nat.eqb_refl. reflexivity.
       * right. assumption.
-    + assert (H4 : heap_add h (l0, vbad) l <> vnull).
+    + assert (H4 : heap_add h (l0, vbad) l <> None).
       { unfold heap_add. rewrite Heqb. assumption. }
       apply IHeval in H4. destruct H4 as [H4 | H4].
       * rewrite H4. unfold heap_add. rewrite Heqb. left. reflexivity.
@@ -380,28 +381,29 @@ Inductive mem_consistant : heap -> val -> type0 -> Prop :=
     mem_consistant h (vpair v w) (tpair A B)
 
 | mem_cons_sum_inl : forall h l v A B,
-    h l = vpair vtt v ->
+    h l = Some (vpair vtt v) ->
     mem_consistant (heap_remove h l) v A ->
     mem_consistant h (vloc l) (tsum A B)
 
 | mem_cons_sum_inr : forall h l v A B,
-    h l = vpair vff v ->
+    h l = Some (vpair vff v) ->
     mem_consistant (heap_remove h l) v B ->
     mem_consistant h (vloc l) (tsum A B)
 
 | mem_cons_sum_bad : forall h l A B,
-    h l = vbad ->
+    h l = Some vbad ->
     mem_consistant h (vloc l) (tsum A B)
 
 | mem_cons_list_nil : forall h A,
     mem_consistant h vnull (tlist A)
 
-| mem_cons_list_cons : forall h l A,
-    mem_consistant (heap_remove h l) (h l) (tpair A (tlist A)) ->
+| mem_cons_list_cons : forall h l A v,
+    h l = Some v ->
+    mem_consistant (heap_remove h l) v (tpair A (tlist A)) ->
     mem_consistant h (vloc l) (tlist A)
 
 | mem_cons_list_bad : forall h l A,
-    h l = vbad ->
+    h l = Some vbad ->
     mem_consistant h (vloc l) (tlist A)
 .
 
