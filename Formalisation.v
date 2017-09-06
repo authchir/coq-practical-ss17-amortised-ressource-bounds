@@ -411,3 +411,93 @@ Inductive mem_consistant_stack : heap -> stack -> context -> Prop :=
 | mem_cons_stack_unit : forall (h : heap) (s : stack) (Gamma : context),
     (forall x t, Gamma x = Some t -> mem_consistant h (s x) t) ->
     mem_consistant_stack h s Gamma.
+
+Definition context_is_subset (c : context) (c' : context) :=
+  forall x v, c x = Some v -> c' x = Some v.
+
+Definition stack_is_subset (s : stack) (s' : stack) : Prop :=
+  forall x v, s x = v -> s' x = v.
+
+Definition heap_is_subset (h : heap) (h' : heap) : Prop :=
+  forall x v, h x = Some v -> h' x = Some v.
+
+Lemma heap_is_subset_remove : forall (h h' : heap) (l : loc),
+  heap_is_subset h h' ->
+  heap_is_subset (heap_remove h l) (heap_remove h' l).
+Proof.
+  unfold heap_is_subset.
+  unfold heap_remove.
+  intros h h' l HEAP_SUBSET x v H.
+  destruct (Nat.eqb l x).
+  - apply H.
+  - apply HEAP_SUBSET. apply H.
+Qed.
+
+Lemma mem_consistancy_heap : forall (h h' : heap) (v : val) (t : type0),
+  heap_is_subset h h' -> mem_consistant h v t -> mem_consistant h' v t.
+Proof.
+  intros h h' v t HEAP_SUBSET MEM_CONS. generalize dependent h'.
+  induction MEM_CONS; intros h' HEAP_SUBSET.
+  - apply mem_cons_unit.
+  - apply mem_cons_true.
+  - apply mem_cons_false.
+  - apply mem_cons_pair.
+    + apply IHMEM_CONS1. apply HEAP_SUBSET.
+    + apply IHMEM_CONS2. apply HEAP_SUBSET.
+  - apply mem_cons_sum_inl with (v:=v).
+    + apply HEAP_SUBSET. apply H.
+    + apply IHMEM_CONS. apply heap_is_subset_remove. apply HEAP_SUBSET.
+  - apply mem_cons_sum_inr with (v:=v).
+    + apply HEAP_SUBSET. apply H.
+    + apply IHMEM_CONS. apply heap_is_subset_remove. apply HEAP_SUBSET.
+  - apply mem_cons_sum_bad. apply HEAP_SUBSET. apply H.
+  - apply mem_cons_list_nil.
+  - apply mem_cons_list_cons with (v:=v).
+    + apply HEAP_SUBSET. apply H.
+    + apply IHMEM_CONS. apply heap_is_subset_remove. apply HEAP_SUBSET.
+  - apply mem_cons_list_bad. apply HEAP_SUBSET. apply H.
+Qed.
+
+(* Lemma 4.10 *)
+Lemma mem_consistancy_closure : forall h h' s s' Delta Gamma,
+  heap_is_subset h h' ->
+  stack_is_subset s s' ->
+  context_is_subset Delta Gamma ->
+  mem_consistant_stack h s Gamma ->
+  mem_consistant_stack h' s' Delta.
+Proof.
+  intros h h' s s' Delta Gamma HEAP_SUBSET STACK_SUBSET CONTEXT_SUBSET MEM_CONS.
+  apply mem_cons_stack_unit.
+  intros x t H.
+  apply CONTEXT_SUBSET in H.
+  inversion MEM_CONS; subst. apply H0 in H. inversion H; subst.
+  - symmetry in H3. apply STACK_SUBSET in H3. rewrite H3. apply mem_cons_unit.
+  - symmetry in H3. apply STACK_SUBSET in H3. rewrite H3. apply mem_cons_true.
+  - symmetry in H3. apply STACK_SUBSET in H3. rewrite H3. apply mem_cons_false.
+  - symmetry in H1. apply STACK_SUBSET in H1. rewrite H1. apply mem_cons_pair;
+      apply mem_consistancy_heap with (h:=h); assumption.
+  - symmetry in H1. apply STACK_SUBSET in H1. rewrite H1.
+    apply mem_cons_sum_inl with (v:=v).
+    + apply HEAP_SUBSET. assumption.
+    + apply mem_consistancy_heap with (h:=heap_remove h l).
+      * apply heap_is_subset_remove. apply HEAP_SUBSET.
+      * assumption.
+  - symmetry in H1. apply STACK_SUBSET in H1. rewrite H1.
+    apply mem_cons_sum_inr with (v:=v).
+    + apply HEAP_SUBSET. assumption.
+    + apply mem_consistancy_heap with (h:=heap_remove h l).
+      * apply heap_is_subset_remove. apply HEAP_SUBSET.
+      * assumption.
+  - symmetry in H1. apply STACK_SUBSET in H1. rewrite H1.
+    apply mem_cons_sum_bad. apply HEAP_SUBSET. assumption.
+  - symmetry in H3. apply STACK_SUBSET in H3. rewrite H3.
+    apply mem_cons_list_nil.
+  - symmetry in H1. apply STACK_SUBSET in H1. rewrite H1.
+    apply mem_cons_list_cons with (v:=v).
+    + apply HEAP_SUBSET. assumption.
+    + apply mem_consistancy_heap with (h:= heap_remove h l).
+      * apply heap_is_subset_remove. apply HEAP_SUBSET.
+      * assumption.
+  - symmetry in H1. apply STACK_SUBSET in H1. rewrite H1.
+    apply mem_cons_list_bad. apply HEAP_SUBSET. assumption.
+Qed.
