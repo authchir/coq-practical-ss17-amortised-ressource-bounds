@@ -2,11 +2,11 @@ Require Import Coq.Strings.String.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Arith.PeanoNat.
-Require Import Coq.FSets.FMaps.
+(* Require Import Coq.FSets.FMaps. *)
 
 Definition var := string.
 
-Module Map := FMapWeakList.Make(Nat).
+(* Module Map := FMapWeakList.Make(Nat). *)
 Search "empty".
 
 Inductive expr : Type :=
@@ -311,19 +311,17 @@ Proof.
   intros p s h e v h' l H1. induction H1; try assumption; try (left; reflexivity).
   - (* eval_let *)
     intro H2. destruct (IHeval1 H2) as [H3 | H3].
-    + rewrite <- H3. apply IHeval2. rewrite H3. apply H2.
+    + rewrite H3 in *. auto.
     + assert (H4 : h0 l <> None).
       { intro contra. rewrite H3 in contra. inversion contra. }
-      apply IHeval2 in H4. destruct H4 as [H4 | H4].
-      * right. rewrite H4. rewrite H3. reflexivity.
-      * right. rewrite H4. reflexivity.
+      apply IHeval2 in H4. destruct H4 as [H4 | H4]; rewrite <- H4 in *; auto.
   - (* eval_sum_inl *)
     intro H2. left. unfold heap_add. destruct (Nat.eqb l0 l) eqn:Heqb.
-    + exfalso. rewrite Nat.eqb_eq in Heqb. subst. apply H2 in H0. apply H0.
+    + exfalso. rewrite Nat.eqb_eq in Heqb. subst. auto.
     + reflexivity.
   - (* eval_sum_inr *)
     intro H2. left. unfold heap_add. destruct (Nat.eqb l0 l) eqn:Heqb.
-    + exfalso. rewrite Nat.eqb_eq in Heqb. subst. apply H2 in H0. apply H0.
+    + exfalso. rewrite Nat.eqb_eq in Heqb. subst. auto.
     + reflexivity.
   - (* eval_sum_match_inl *)
     intro H2. destruct (Nat.eqb l0 l) eqn:Heqb.
@@ -435,34 +433,14 @@ Proof.
   unfold heap_is_subset.
   unfold heap_remove.
   intros h h' l HEAP_SUBSET x v H.
-  destruct (Nat.eqb l x).
-  - apply H.
-  - apply HEAP_SUBSET. apply H.
+  destruct (Nat.eqb l x); auto.
 Qed.
 
 Lemma mem_consistancy_heap : forall (h h' : heap) (v : val) (t : type0),
   heap_is_subset h h' -> mem_consistant h v t -> mem_consistant h' v t.
 Proof.
   intros h h' v t HEAP_SUBSET MEM_CONS. generalize dependent h'.
-  induction MEM_CONS; intros h' HEAP_SUBSET.
-  - apply mem_cons_unit.
-  - apply mem_cons_true.
-  - apply mem_cons_false.
-  - apply mem_cons_pair.
-    + apply IHMEM_CONS1. apply HEAP_SUBSET.
-    + apply IHMEM_CONS2. apply HEAP_SUBSET.
-  - apply mem_cons_sum_inl with (v:=v).
-    + apply HEAP_SUBSET. apply H.
-    + apply IHMEM_CONS. apply heap_is_subset_remove. apply HEAP_SUBSET.
-  - apply mem_cons_sum_inr with (v:=v).
-    + apply HEAP_SUBSET. apply H.
-    + apply IHMEM_CONS. apply heap_is_subset_remove. apply HEAP_SUBSET.
-  - apply mem_cons_sum_bad. apply HEAP_SUBSET. apply H.
-  - apply mem_cons_list_nil.
-  - apply mem_cons_list_cons with (v:=v).
-    + apply HEAP_SUBSET. apply H.
-    + apply IHMEM_CONS. apply heap_is_subset_remove. apply HEAP_SUBSET.
-  - apply mem_cons_list_bad. apply HEAP_SUBSET. apply H.
+  induction MEM_CONS; intros; eauto using mem_consistant, heap_is_subset_remove.
 Qed.
 
 (* Lemma 4.10 *)
