@@ -2,9 +2,12 @@ Require Import Coq.Strings.String.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Arith.PeanoNat.
+Require Import Coq.FSets.FMaps.
 
 Definition var := string.
-Check Vector.t.
+
+Module Map := FMapWeakList.Make(Nat).
+Search "empty".
 
 Inductive expr : Type :=
 | eunit : expr
@@ -208,7 +211,11 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
     eval p s h e1 v0 h0 -> eval p (stack_add s (x, v0)) h0 e2 v h' ->
     eval p s h (elet x e1 e2) v h'
 
-| eval_fun : forall (p : program) (s : stack) h f ys ef xs vs v s' h',
+| eval_fun : forall (p : program) (s s' : stack) (h h' : heap) (f : var)
+    (ys : list var) (ef : expr)
+    (xs : Vector.t var (List.length ys))
+    (vs : Vector.t val (List.length ys))
+    (v : val),
     vs = Vector.map s xs ->
     p f = (ys, ef) ->
     s' = Vector.fold_left stack_add stack_empty
@@ -412,13 +419,13 @@ Inductive mem_consistant_stack : heap -> stack -> context -> Prop :=
     (forall x t, Gamma x = Some t -> mem_consistant h (s x) t) ->
     mem_consistant_stack h s Gamma.
 
-Definition context_is_subset (c : context) (c' : context) :=
+Definition context_is_subset (c c' : context) :=
   forall x v, c x = Some v -> c' x = Some v.
 
-Definition stack_is_subset (s : stack) (s' : stack) : Prop :=
+Definition stack_is_subset (s s' : stack) : Prop :=
   forall x v, s x = v -> s' x = v.
 
-Definition heap_is_subset (h : heap) (h' : heap) : Prop :=
+Definition heap_is_subset (h h' : heap) : Prop :=
   forall x v, h x = Some v -> h' x = Some v.
 
 Lemma heap_is_subset_remove : forall (h h' : heap) (l : loc),
@@ -501,3 +508,78 @@ Proof.
   - symmetry in H1. apply STACK_SUBSET in H1. rewrite H1.
     apply mem_cons_list_bad. apply HEAP_SUBSET. assumption.
 Qed.
+
+Definition stack_is_disjoint (s s' : stack) : Prop :=
+  forall x, ~ (s x <> vnull /\ s' x <> vnull).
+
+(*
+Definition context_is_disjoint (c c' : context) : Prop :=
+  forall x v v', ~ (c x = Some v /\ c' x = Some v').
+ *)
+Definition context_is_disjoint (c c' : context) : Prop := forall x,
+  ((forall v, c  x = Some v) -> c' x = None) /\
+  ((forall v, c' x = Some v) -> c  x = None).
+
+Print stack.
+Print var.
+
+Definition stack_join (s s' : stack) : stack := fun x =>
+  match s x with
+  | vnull => s' x
+  | y => y
+  end.
+
+Definition context_join (c c' : context) : context := fun x =>
+  match c x with
+  | None => c' x
+  | Some y => Some y
+  end.
+
+Lemma stack_join_induction : forall s s' x P,
+  P (s x) -> P (s' x) -> stack_is_disjoint s s' -> P (stack_join s s' x).
+Proof.
+  intros s s' x P Ps Ps' STACK_DISJOINT. unfold stack_join.
+  induction (s x) eqn:eqnSx; try assumption.
+Qed.
+
+Lemma context_join_induction : forall c c' x P,
+  P (c x) -> P (c' x) -> context_is_disjoint c c' -> P (context_join c c' x).
+Proof.
+  intros c c' x P Pc Pc' CONTEXT_DISJOINT. unfold context_join.
+  induction (c x) eqn:eqnCx; try assumption.
+Qed.
+
+(* Lemma 4.11 *)
+Lemma join_consistency : forall (h : heap) (s s' : stack) (Delta Gamma : context),
+  stack_is_disjoint s s' ->
+  context_is_disjoint Delta Gamma ->
+  mem_consistant_stack h s Gamma ->
+  mem_consistant_stack h s' Delta ->
+  mem_consistant_stack h (stack_join s s') (context_join Gamma Delta).
+Proof.
+  intros h s s' Delta Gamma STACK_DISJOINT CONTEXT_DISJOINT MEM_CONS1 MEM_CONS2.
+  apply mem_cons_stack_unit. intros x t H.
+  inversion MEM_CONS1; subst.
+  inversion MEM_CONS2; subst.
+  unfold context_join in H.
+  destruct (Gamma x) eqn:GammaX.
+  - rewrite H in GammaX. apply H0 in GammaX.
+    unfold stack_join.
+    inversion GammaX; subst.
+    + constructor.
+    + constructor.
+    + constructor.
+    + constructor; assumption.
+    + apply mem_cons_sum_inl with (v:=v); assumption.
+    + apply mem_cons_sum_inr with (v:=v); assumption.
+    + apply mem_cons_sum_bad; assumption.
+    + apply mem_cons_list_nil.
+
+
+
+
+
+
+
+
+
