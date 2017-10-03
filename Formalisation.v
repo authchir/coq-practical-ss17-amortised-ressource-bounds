@@ -393,6 +393,17 @@ Proof.
       * auto.
 Qed.
 
+Lemma heap_stability_domain : forall p s h e v h',
+  eval p s h e v h' ->
+  forall l, h l <> None -> h' l <> None.
+Proof.
+  intros p s h e v h' EVAL l H.
+  eapply heap_stability in EVAL; try eassumption.
+  destruct EVAL as [H2 | H2].
+  - rewrite H2. assumption.
+  - rewrite H2. congruence.
+Qed.
+
 (* Definition 4.9 *)
 
 Inductive mem_consistant : heap -> val -> type0 -> Prop :=
@@ -558,13 +569,13 @@ Qed.
 
 (* Lemma 4.12 *)
 Lemma deallocation_consistency :
-  forall (h : heap) (s : stack) (Gamma : context) (l : loc) (v : val),
+  forall (h : heap) (s : stack) (Gamma : context) (l : loc),
   mem_consistant_stack h s Gamma ->
-  h l = Some v ->
+  h l <> None ->
   mem_consistant_stack (heap_add h (l, vbad)) s Gamma.
 Proof.
   unfold mem_consistant_stack in *.
-  intros h s Gamma l v MEM_CONS HEAP_DOM x t CONTEXT_DOM.
+  intros h s Gamma l MEM_CONS HEAP_DOM x t CONTEXT_DOM.
   apply MEM_CONS in CONTEXT_DOM as [v' [STACK_DOM MEM_CONS2]].
   exists v'.
   split; try assumption.
@@ -578,7 +589,7 @@ Proof.
     + apply beq_nat_true in Eqn. subst.
       apply mem_cons_sum_bad.
       unfold heap_add. rewrite Nat.eqb_refl. reflexivity.
-    + apply mem_cons_sum_inl with (v:=v0).
+    + apply mem_cons_sum_inl with (v:=v).
       * unfold heap_add. rewrite Eqn. assumption.
       * rewrite heap_remove_add_swap.
         { apply IHMEM_CONS2.
@@ -591,7 +602,7 @@ Proof.
     + apply beq_nat_true in Eqn. subst.
       apply mem_cons_sum_bad.
       unfold heap_add. rewrite Nat.eqb_refl. reflexivity.
-    + apply mem_cons_sum_inr with (v:=v0).
+    + apply mem_cons_sum_inr with (v:=v).
       * unfold heap_add. rewrite Eqn. assumption.
       * rewrite heap_remove_add_swap.
         { apply IHMEM_CONS2.
@@ -610,7 +621,7 @@ Proof.
     + apply beq_nat_true in Eqn. subst.
       apply mem_cons_list_bad.
       unfold heap_add. rewrite Nat.eqb_refl. reflexivity.
-    + apply mem_cons_list_cons with (v:=v0).
+    + apply mem_cons_list_cons with (v:=v).
       * unfold heap_add. rewrite Eqn. assumption.
       * rewrite heap_remove_add_swap.
         { apply IHMEM_CONS2.
@@ -625,3 +636,44 @@ Proof.
     + reflexivity.
     + assumption.
 Qed.
+
+(* Lemma 4.13 *)
+Lemma preservation : forall (Sigma : prog_sig) (Gamma : context) (p : program)
+  (s : stack) (h h' : heap) (e : expr) (c : type0) (v : val) (l : loc),
+  has_type Sigma Gamma e c ->
+  eval p s h e v h' ->
+  mem_consistant_stack h s Gamma ->
+  mem_consistant h' v c /\ mem_consistant_stack h' s Gamma.
+Proof.
+  intros Sigma Gamma p s h h' e c v l WELL_TYPED EVAL MEM_CONS. split.
+  - admit.
+
+
+
+  (** heap_stability
+     : forall (p : program) (s : stack) (h : heap) (e : expr) (v : val)
+         (h' : heap) (l : loc),
+       eval p s h e v h' -> h l <> None -> h' l = h l \/ h' l = Some vbad *)
+
+  (** heap_stability_domain
+     : forall (p : program) (s : stack) (h : heap) (e : expr) (v : val)
+         (h' : heap),
+       eval p s h e v h' -> forall l : loc, h l <> None -> h' l <> None *)
+
+  (** deallocation_consistency
+     : forall (h : heap) (s : stack) (Gamma : context) (l : loc),
+       mem_consistant_stack h s Gamma ->
+       h l <> None -> mem_consistant_stack (heap_add h (l, vbad)) s Gamma *)
+  - Check heap_stability.
+    apply heap_stability with (l:=l) in EVAL as [H | H].
+    + admit.
+    + assert (H2 : h' l <> None). { congruence. }
+(*       apply deallocation_consistency with (l:=l) in MEM_CONS. *)
+      apply deallocation_consistency with (s:=s) (Gamma:=Gamma) in H2.
+      * assert (H3 : forall (h : heap) l v, h l = Some v -> heap_add h (l, v) = h).
+        { intros. unfold heap_add. extensionality x.
+          destruct (Nat.eqb l0 x) eqn:Eqn; try reflexivity.
+          apply beq_nat_true in Eqn; subst; auto. }
+        rewrite H3 in H2; assumption.
+      * 
+Abort.
