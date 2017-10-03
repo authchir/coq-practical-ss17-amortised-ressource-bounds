@@ -44,12 +44,13 @@ match p, e with
 | (x, xe), esum_inr y => esum_inr y     (* TODO: Fix *)
 | (x, xe), esum_match y (y1, e1) (y2, e2) => esum_match y (y1, e1) (y2, e2)
   (* TODO: Fix *)
-| (x, xe), esum_match_elim y (y1, e1) (y2, e2) => esum_match_elim y (y1, e1) (y2, e2)
-  (* TODO: Fix *)
+| (x, xe), esum_match_elim y (y1, e1) (y2, e2) =>
+  esum_match_elim y (y1, e1) (y2, e2) (* TODO: Fix *)
 | (x, xe), elist_nil => elist_nil
 | (x, xe), elist_cons yh yt => elist_cons yh yt (* TODO: Fix *)
 | (x, xe), elist_match y e1 (yh, yt, e2) => elist_match y e1 (yh, yt, e2)
-| (x, xe), elist_match_elim y e1 (yh, yt, e2) => elist_match_elim y e1 (yh, yt, e2)
+| (x, xe), elist_match_elim y e1 (yh, yt, e2) =>
+  elist_match_elim y e1 (yh, yt, e2)
 end.
 
 Inductive type0 : Type :=
@@ -128,13 +129,15 @@ Inductive has_type : prog_sig -> context -> expr -> type0 -> Prop :=
 | has_type_sum_match : forall Sigma Gamma x y z el er A B C,
     has_type Sigma (context_add Gamma (y, A)) el C ->
     has_type Sigma (context_add Gamma (z, B)) er C ->
-    has_type Sigma (context_add Gamma (x, tsum A B)) (esum_match x (y, el) (z, er)) C
+    has_type Sigma (context_add Gamma (x, tsum A B))
+      (esum_match x (y, el) (z, er)) C
 
 
 | has_type_sum_match_elim : forall Sigma Gamma x y z el er A B C,
     has_type Sigma (context_add Gamma (y, A)) el C ->
     has_type Sigma (context_add Gamma (z, B)) er C ->
-    has_type Sigma (context_add Gamma (x, tsum A B)) (esum_match_elim x (y, el) (z, er)) C
+    has_type Sigma (context_add Gamma (x, tsum A B))
+      (esum_match_elim x (y, el) (z, er)) C
 
 | has_type_list_nil : forall Sigma A,
     has_type Sigma context_empty elist_nil (tlist A)
@@ -146,12 +149,14 @@ Inductive has_type : prog_sig -> context -> expr -> type0 -> Prop :=
 | has_type_list_match : forall Sigma Gamma x xh xt e1 e2 A C,
     has_type Sigma Gamma e1 C ->
     has_type Sigma (context_add (context_add Gamma (xh, A)) (xt, tlist A)) e2 C ->
-    has_type Sigma (context_add Gamma (x, tlist A)) (elist_match x e1 (xh, xt, e2)) C
+    has_type Sigma (context_add Gamma (x, tlist A))
+      (elist_match x e1 (xh, xt, e2)) C
 
 | has_type_list_match_elim : forall Sigma Gamma x xh xt e1 e2 A C,
     has_type Sigma Gamma e1 C ->
     has_type Sigma (context_add (context_add Gamma (xh, A)) (xt, tlist A)) e2 C ->
-    has_type Sigma (context_add Gamma (x, tlist A)) (elist_match x e1 (xh, xt, e2)) C
+    has_type Sigma (context_add Gamma (x, tlist A))
+      (elist_match x e1 (xh, xt, e2)) C
 
 (* Structural Rules *)
 
@@ -162,7 +167,8 @@ Inductive has_type : prog_sig -> context -> expr -> type0 -> Prop :=
 | has_type_share : forall Sigma Gamma x y z e A A1 A2 C,
     has_type Sigma (context_add (context_add Gamma (x, A1)) (y, A2)) e C ->
     share A (A1, A2) ->
-    has_type Sigma (context_add Gamma (z, A)) (subst (z, evar x) (subst (z, evar y) e)) C
+    has_type Sigma (context_add Gamma (z, A))
+      (subst (z, evar x) (subst (z, evar y) e)) C
 .
 
 
@@ -432,7 +438,7 @@ Inductive mem_consistant : heap -> val -> type0 -> Prop :=
 .
 
 Definition mem_consistant_stack (h : heap) (s : stack) (Gamma : context) :=
-    (forall x t, Gamma x = Some t -> exists v, s x = Some v /\ mem_consistant h v t).
+  forall x t, Gamma x = Some t -> exists v, s x = Some v /\ mem_consistant h v t.
 
 Definition context_is_subset (c c' : context) : Prop :=
   forall x v, c x = Some v -> c' x = Some v.
@@ -512,7 +518,8 @@ Definition context_join (c c' : context) : context := fun x =>
   end.
 
 (* Lemma 4.11 *)
-Lemma join_consistency : forall (h : heap) (s s' : stack) (Delta Gamma : context),
+Lemma join_consistency :
+  forall (h : heap) (s s' : stack) (Delta Gamma : context),
   stack_is_disjoint s s' ->
   context_is_disjoint Delta Gamma ->
   mem_consistant_stack h s Gamma ->
