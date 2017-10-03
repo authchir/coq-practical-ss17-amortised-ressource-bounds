@@ -1,7 +1,7 @@
 Require Import Coq.Strings.String.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Logic.FunctionalExtensionality.
-Require Import Coq.Arith.PeanoNat.
+Require Import Coq.Arith.Arith.
 (* Require Import Coq.FSets.FMaps. *)
 
 Definition var := string.
@@ -42,8 +42,10 @@ match p, e with
 | (x, xe), epair_match y (x1, x2) e => epair_match y (x1, x2) e (* TODO: Fix *)
 | (x, xe), esum_inl y => esum_inl y     (* TODO: Fix *)
 | (x, xe), esum_inr y => esum_inr y     (* TODO: Fix *)
-| (x, xe), esum_match y (y1, e1) (y2, e2) => esum_match y (y1, e1) (y2, e2) (* TODO: Fix *)
-| (x, xe), esum_match_elim y (y1, e1) (y2, e2) => esum_match_elim y (y1, e1) (y2, e2) (* TODO: Fix *)
+| (x, xe), esum_match y (y1, e1) (y2, e2) => esum_match y (y1, e1) (y2, e2)
+  (* TODO: Fix *)
+| (x, xe), esum_match_elim y (y1, e1) (y2, e2) => esum_match_elim y (y1, e1) (y2, e2)
+  (* TODO: Fix *)
 | (x, xe), elist_nil => elist_nil
 | (x, xe), elist_cons yh yt => elist_cons yh yt (* TODO: Fix *)
 | (x, xe), elist_match y e1 (yh, yt, e2) => elist_match y e1 (yh, yt, e2)
@@ -197,7 +199,6 @@ Definition heap_add (h : heap) (p : loc * val) :=
 Definition heap_remove (h : heap) (l : loc) :=
   fun y => if Nat.eqb l y then None else h y.
 
-Check Vector.fold_left stack_add stack_empty.
 
 Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
 | eval_unit :  forall p s h,
@@ -431,7 +432,7 @@ Inductive mem_consistant : heap -> val -> type0 -> Prop :=
 .
 
 Definition mem_consistant_stack (h : heap) (s : stack) (Gamma : context) :=
-    (forall x v t, Gamma x = Some t -> s x = Some v /\ mem_consistant h v t).
+    (forall x t, Gamma x = Some t -> exists v, s x = Some v /\ mem_consistant h v t).
 
 Definition context_is_subset (c c' : context) : Prop :=
   forall x v, c x = Some v -> c' x = Some v.
@@ -466,9 +467,9 @@ Lemma mem_consistancy_stack : forall (h: heap) (s s' : stack) (Gamma : context),
 Proof.
   intros h s s' Gamma STACK_SUBSET MEM_CONS.
   unfold mem_consistant_stack in *.
-  intros x v t Hcontext.
-  apply MEM_CONS with (v:=v) in Hcontext as [H1 H2].
-  auto.
+  intros x t Hcontext.
+  apply MEM_CONS in Hcontext as [v [H1 H2]].
+  eauto.
 Qed.
 
 (* Lemma 4.10 *)
@@ -481,9 +482,9 @@ Lemma mem_consistancy_closure : forall h h' s s' Delta Gamma,
 Proof.
   intros h h' s s' Delta Gamma HEAP_SUBSET STACK_SUBSET CONTEXT_SUBSET MEM_CONS.
   unfold mem_consistant_stack.
-  intros x v t Hcontext.
+  intros x t Hcontext.
   apply CONTEXT_SUBSET in Hcontext.
-  eapply MEM_CONS in Hcontext as [H1 H2].
+  eapply MEM_CONS in Hcontext as [v [H1 H2]].
   eauto using mem_consistancy_heap.
 Qed.
 
@@ -513,34 +514,107 @@ Definition context_join (c c' : context) : context := fun x =>
 (* Lemma 4.11 *)
 Lemma join_consistency : forall (h : heap) (s s' : stack) (Delta Gamma : context),
   stack_is_disjoint s s' ->
-(*   context_is_disjoint Delta Gamma -> *)
+  context_is_disjoint Delta Gamma ->
   mem_consistant_stack h s Gamma ->
   mem_consistant_stack h s' Delta ->
   mem_consistant_stack h (stack_join s s') (context_join Gamma Delta).
 Proof.
-  intros h s s' Delta Gamma STACK_DISJOINT (* CONTEXT_DISJOINT *) MEM_CONS1 MEM_CONS2.
-  unfold mem_consistant_stack in *. intros x v t H.
+  intros h s s' Delta Gamma STACK_DISJOINT _ MEM_CONS1 MEM_CONS2.
+  unfold mem_consistant_stack in *. intros x t H.
   unfold context_join in H.
   destruct (Gamma x) eqn:GammaX.
   - rewrite H in GammaX.
-    apply MEM_CONS1 with (v:=v) in GammaX as [H1 H2].
+    apply MEM_CONS1 in GammaX as [v [H1 H2]].
     unfold stack_join.
-    rewrite H1. auto.
-  - apply MEM_CONS2 with (v:=v) in H as [H1 H2].
+    rewrite H1. eauto.
+  - apply MEM_CONS2 in H as [v [H1 H2]].
     unfold stack_join.
     rewrite H1.
     unfold stack_is_disjoint in STACK_DISJOINT.
     edestruct STACK_DISJOINT as [SD1 SD2].
     apply SD2 in H1.
     rewrite H1.
-    auto.
+    eauto.
 Qed.
 
+Lemma heap_remove_add_swap : forall h l l' v,
+  l <> l' ->
+  heap_remove (heap_add h (l, v)) l' = heap_add (heap_remove h l') (l, v).
+Proof.
+  intros h l l' v H.
+  extensionality x. unfold heap_add, heap_remove.
+  destruct (Nat.eqb l x) eqn:Eqn1, (Nat.eqb l' x) eqn:Eqn2; try reflexivity.
+  - apply beq_nat_true in Eqn1; subst.
+    apply beq_nat_true in Eqn2; subst.
+    congruence.
+Qed.
 
-
-
-
-
-
-
-
+(* Lemma 4.12 *)
+Lemma deallocation_consistency :
+  forall (h : heap) (s : stack) (Gamma : context) (l : loc) (v : val),
+  mem_consistant_stack h s Gamma ->
+  h l = Some v ->
+  mem_consistant_stack (heap_add h (l, vbad)) s Gamma.
+Proof.
+  unfold mem_consistant_stack in *.
+  intros h s Gamma l v MEM_CONS HEAP_DOM x t CONTEXT_DOM.
+  apply MEM_CONS in CONTEXT_DOM as [v' [STACK_DOM MEM_CONS2]].
+  exists v'.
+  split; try assumption.
+  clear MEM_CONS. clear Gamma. clear STACK_DOM.
+  induction MEM_CONS2.
+  - constructor.
+  - constructor.
+  - constructor.
+  - constructor; auto.
+  - destruct (Nat.eqb l l0) eqn:Eqn.
+    + apply beq_nat_true in Eqn. subst.
+      apply mem_cons_sum_bad.
+      unfold heap_add. rewrite Nat.eqb_refl. reflexivity.
+    + apply mem_cons_sum_inl with (v:=v0).
+      * unfold heap_add. rewrite Eqn. assumption.
+      * rewrite heap_remove_add_swap.
+        { apply IHMEM_CONS2.
+          unfold heap_remove.
+          rewrite Nat.eqb_sym.
+          rewrite Eqn.
+          assumption. }
+        { apply beq_nat_false. assumption. }
+  - destruct (Nat.eqb l l0) eqn:Eqn.
+    + apply beq_nat_true in Eqn. subst.
+      apply mem_cons_sum_bad.
+      unfold heap_add. rewrite Nat.eqb_refl. reflexivity.
+    + apply mem_cons_sum_inr with (v:=v0).
+      * unfold heap_add. rewrite Eqn. assumption.
+      * rewrite heap_remove_add_swap.
+        { apply IHMEM_CONS2.
+          unfold heap_remove.
+          rewrite Nat.eqb_sym.
+          rewrite Eqn.
+          assumption. }
+        { apply beq_nat_false. assumption. }
+  - apply mem_cons_sum_bad.
+    unfold heap_add.
+    destruct (Nat.eqb l l0).
+    + reflexivity.
+    + assumption.
+  - constructor.
+  - destruct (Nat.eqb l l0) eqn:Eqn.
+    + apply beq_nat_true in Eqn. subst.
+      apply mem_cons_list_bad.
+      unfold heap_add. rewrite Nat.eqb_refl. reflexivity.
+    + apply mem_cons_list_cons with (v:=v0).
+      * unfold heap_add. rewrite Eqn. assumption.
+      * rewrite heap_remove_add_swap.
+        { apply IHMEM_CONS2.
+          unfold heap_remove.
+          rewrite Nat.eqb_sym.
+          rewrite Eqn.
+          apply HEAP_DOM. }
+        { apply beq_nat_false. assumption. }
+  - apply mem_cons_list_bad.
+    unfold heap_add.
+    destruct (Nat.eqb l l0).
+    + reflexivity.
+    + assumption.
+Qed.
