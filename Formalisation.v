@@ -677,3 +677,37 @@ Proof.
         rewrite H3 in H2; assumption.
       * 
 Abort.
+
+
+
+(* Definition 4.14 *)
+Fixpoint size (v : val) : nat :=
+match v with
+| vunit => 1
+| vtt => 1
+| vff => 1
+| vpair v1 v2 => size v1 + size v2
+| vloc _ => 1
+| vnull => 1
+| vbad => 0
+end.
+
+(* Definition 4.15 *)
+Fixpoint typ_size (t : type0) : nat :=
+match t with
+| tunit => 1
+| tbool => 1
+| tpair a b => typ_size a + typ_size b
+| tsum _ _ => 1
+| tlist _ => 1
+end.
+
+Check mem_consistant.
+
+(* Lemma 4.16 *)
+Lemma size_correspondance : forall (h: heap) (v : val) (a : type0),
+  mem_consistant h v a -> size v = typ_size a.
+Proof.
+  intros h v a MEM_CONS. induction MEM_CONS; try reflexivity.
+  - simpl. rewrite IHMEM_CONS1. rewrite IHMEM_CONS2. reflexivity.
+Qed.
