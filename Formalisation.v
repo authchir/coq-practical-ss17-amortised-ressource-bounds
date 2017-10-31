@@ -795,3 +795,145 @@ Proof.
   intros h v a MEM_CONS. induction MEM_CONS; try reflexivity.
   - simpl. rewrite IHMEM_CONS1. rewrite IHMEM_CONS2. reflexivity.
 Qed.
+
+(* Definition 4.17 *)
+Inductive evalR : program -> stack -> heap -> nat -> nat -> expr -> val ->
+  heap -> Prop :=
+| evalR_unit :  forall (p : program) (s : stack) (h : heap) (m : nat),
+    evalR p s h m m eunit vunit h
+
+| evalR_true :  forall (p : program) (s : stack) (h : heap) (m : nat),
+    evalR p s h m m etrue vtt h
+
+| evalR_false : forall (p : program) (s : stack) (h : heap) (m : nat),
+    evalR p s h m m efalse vff h
+
+| evalR_var : forall (p : program) (s : stack) (h : heap) (m : nat) x v,
+    s x = Some v ->
+    evalR p s h m m (evar x) v h
+
+| evalR_let : forall (p : program) (s : stack) (h h0 h' : heap) (m m0 m' : nat)
+    (x : var) (e1 e2 : expr) (v0 v : val),
+    evalR p s h m m0 e1 v0 h0 ->
+    evalR p (stack_add s (x, Some v0)) h0 m0 m' e2 v h' ->
+    evalR p s h m m' (elet x e1 e2) v h'
+
+| evalR_fun : forall (p : program) (s s' : stack) (h h' : heap) (f : var)
+    (ys : list var) (ef : expr)
+    (xs : Vector.t var (List.length ys))
+    (vs : Vector.t (option val) (List.length ys))
+    (v : val) (m m' : nat),
+    vs = Vector.map s xs ->
+    p f = (ys, ef) ->
+    s' = Vector.fold_left stack_add stack_empty
+      (Vector.map2 pair (Vector.of_list ys) vs) ->
+    evalR p s' h m m' ef v h' ->
+    evalR p s h m m' (eapp f xs) v h'
+
+| evalR_if_true : forall (p : program) (s : stack) (h h' : heap) (x : var)
+    (et ef : expr) (v : val) (m m' : nat),
+    s x = Some vtt ->
+    evalR p s h m m' et v h' ->
+    evalR p s h m m' (eif x et ef) v h'
+
+| evalR_if_false : forall (p : program) (s : stack) (h h' : heap) (x : var)
+    (et ef : expr) (v : val) (m m' : nat),
+    s x = Some vff ->
+    evalR p s h m m' ef v h' ->
+    evalR p s h m m' (eif x et ef) v h'
+
+| evalR_pair : forall (p : program) (s : stack) (h : heap) (x1 x2 : var)
+    (v1 v2 : val) (m : nat),
+    s x1 = Some v1 ->
+    s x2 = Some v2 ->
+    evalR p s h m m (epair x1 x2) (vpair v1 v2) h
+
+| evalR_pair_match : forall (p : program) (s s' : stack) (h h' : heap)
+    (x x1 x2 : var) (v1 v2 v : val) (e : expr) (m m' : nat),
+    s x = Some (vpair v1 v2) ->
+    s' = stack_add (stack_add s (x1, Some v1)) (x2, Some v2) ->
+    evalR p s' h m m' e v h' ->
+    evalR p s h m m' (epair_match x  (x1, x2) e) v  h'
+
+| evalR_sum_inl : forall (p : program) (s : stack) (h : heap) (x : var)
+    (w : val) (l : loc) (v : val) (m' : nat),
+    s x = Some v ->
+    w = vpair vtt v ->
+    h l = None ->
+    evalR p s h (m' + size w) m' (esum_inl x) (vloc l) (heap_add h (l, w))
+
+| evalR_sum_inr : forall (p : program) (s : stack) (h : heap) (x : var)
+    (w : val) (l : loc) (v : val) (m' : nat),
+    s x = Some v ->
+    w = vpair vff v ->
+    h l = None ->
+    evalR p s h (m' + size w) m' (esum_inr x) (vloc l) (heap_add h (l, w))
+
+| evalR_sum_match_inl : forall (p : program) (s : stack) (h h' : heap) (l : loc)
+    (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    s x = Some (vloc l) ->
+    h l = Some (vpair vtt w) ->
+    evalR p (stack_add s (y, Some w)) h m m' el v h' ->
+    evalR p s h m m' (esum_match x (y, el) (z, er)) v h'
+
+| evalR_sum_match_elim_inl : forall (p : program) (s : stack) (h h' : heap)
+    (l : loc) (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    s x = Some (vloc l) ->
+    h l = Some (vpair vtt w) ->
+    evalR p (stack_add s (y, Some w)) (heap_add h (l, vbad)) (m + size w) m' el v h' ->
+    evalR p s h m m' (esum_match_elim x (y, el) (z, er)) v h'
+
+| evalR_sum_match_inr : forall (p : program) (s : stack) (h h' : heap) (l : loc)
+    (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    s x = Some (vloc l) ->
+    h l = Some (vpair vff w) ->
+    evalR p (stack_add s (z, Some w)) h m m' er v h' ->
+    evalR p s h m m' (esum_match x (y, el) (z, er)) v h'
+
+| evalR_sum_match_elim_inr : forall (p : program) (s : stack) (h h' : heap)
+    (l : loc) (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    s x = Some (vloc l) ->
+    h l = Some (vpair vff w) ->
+    evalR p (stack_add s (z, Some w)) (heap_add h (l, vbad)) (m + size w) m' er v h' ->
+    evalR p s h m m' (esum_match_elim x (y, el) (z, er)) v h'
+
+| evalR_list_nil : forall (p : program) (s : stack) (h : heap) (m : nat),
+    evalR p s h m m elist_nil vnull h
+
+| evalR_list_cons : forall (p : program) (s : stack) (h : heap) (l : loc)
+    (w : val) (xh xt : var) (vh vt : val) (m' : nat),
+    s xh = Some vh ->
+    s xt = Some vt ->
+    w = vpair vh vt ->
+    h l = None ->
+    evalR p s h (m' + size w) m' (elist_cons xh xt) (vloc l) (heap_add h (l, w))
+
+| evalR_list_match_nil : forall (p : program) (s : stack) (h h' : heap)
+    (x xh xt : var) (e1 e2 : expr) (v : val) (m m' : nat),
+    s x = Some vnull ->
+    evalR p s h m m' e1 v h' ->
+    evalR p s h m m' (elist_match x e1 (xh, xt, e2)) v h'
+
+| evalR_list_match_elim_nil : forall (p : program) (s : stack) (h h' : heap)
+    (x xh xt : var) (e1 e2 : expr) (v : val) (m m' : nat),
+    s x = Some vnull ->
+    evalR p s h m m' e1 v h' -> 
+    evalR p s h m m' (elist_match x e1 (xh, xt, e2)) v h'
+
+| evalR_list_match_cons : forall (p : program) (s : stack) (h h' : heap)
+    (l : loc) (x xh xt : var) (w wh wt : val) (e1 e2 : expr) (v : val) (m m' : nat),
+    s x = Some (vloc l) ->
+    h l = Some w ->
+    w = (vpair wh wt) ->
+    evalR p (stack_add (stack_add s (xh, Some wh)) (xt, Some wt)) h m m' e2 v h' ->
+    evalR p s h m m' (elist_match x e1 (xh, xt, e2)) v h'
+
+| evalR_list_match_elim_cons : forall (p : program) (s s' : stack) (h h' : heap)
+    (l : loc) (x xh xt : var) (w wh wt : val) (e1 e2 : expr) (v : val) (m m' : nat),
+    s x = Some (vloc l) ->
+    h l = Some w ->
+    w = (vpair wh wt) ->
+    s' = stack_add (stack_add s (xh, Some wh)) (xt, Some wt) ->
+    evalR p s' (heap_add h (l, vbad)) (m + size w) m' e2 v h' ->
+    evalR p s h m m' (elist_match x e1 (xh, xt, e2)) v h'
+.
