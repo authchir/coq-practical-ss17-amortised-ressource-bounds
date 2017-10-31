@@ -951,6 +951,24 @@ Proof.
 Qed.
 
 
+(* Lemma 4.19 *)
+Lemma cost_counting_inviolacy : forall (p : program) (s : stack) (h h' : heap)
+  (m m' : nat) (e : expr) (v : val),
+  evalR p s h m m' e v h' ->
+  eval p s h e v h'.
+Proof.
+  intros p s h h' m m' e v EVAL.
+  induction EVAL; subst; try eauto using eval.
+Qed.
+
+
+
+
+
+
+
+
+
 
 
 
