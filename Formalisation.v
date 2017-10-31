@@ -327,81 +327,92 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
     eval p s h (elist_match x e1 (xh, xt, e2)) v h'
 .
 
+Lemma heap_add_lookup_refl : forall (h : heap) (l : loc) (x : val),
+  heap_add h (l, x) l = Some x.
+Proof.
+  intros. simpl. rewrite Nat.eqb_refl. reflexivity.
+Qed.
+
+Lemma new_heap_lookup_diff : forall (h : heap) (l l' : loc) (x x' : val),
+   Nat.eqb l' l = false -> h l = Some x -> heap_add h (l', x') l = Some x.
+Proof.
+  intros h l' l x x' H1 H2.
+  simpl. rewrite H1. assumption.
+Qed.
+
+Lemma new_heap_lookup : forall (h h' : heap) (l : loc) (x : val),
+  h l = heap_add h' (l, x) l -> h l = Some x.
+Proof.
+  intros. rewrite heap_add_lookup_refl in *. assumption.
+Qed.
+
+Lemma new_heap_lookup2 : forall h h' l l' x,
+  Nat.eqb l' l = false -> h l = heap_add h' (l', x) l -> h l = h' l.
+Proof.
+  intros h h' l l' x H1 H2.
+  rewrite H2.
+  simpl.
+(*   rewrite Nat.eqb_sym. *)
+  rewrite H1.
+  reflexivity.
+Qed.
+
 (* Lemma 4.8 *)
 Lemma heap_stability : forall p s h e v h' l,
   eval p s h e v h' ->
-  h l <> None ->
+  forall x,
+  h l = Some x ->
   h' l = h l \/ h' l = Some vbad.
 Proof.
   intros p s h e v h' l H1. induction H1; try assumption; try (left; reflexivity).
   - (* eval_let *)
-    intro H2. destruct (IHeval1 H2) as [H3 | H3].
-    + rewrite H3 in *. auto.
-    + assert (H4 : h0 l <> None).
-      { intro contra. rewrite H3 in contra. inversion contra. }
-      apply IHeval2 in H4. destruct H4 as [H4 | H4]; rewrite <- H4 in *; auto.
+    intros x' H2. destruct (IHeval1 _ H2) as [H3 | H3].
+    + rewrite H3 in *. eauto.
+    + destruct (IHeval2 _ H3) as [H4 | H4]; rewrite <- H4 in *; eauto.
   - (* eval_sum_inl *)
-    intro H2. left. unfold heap_add. destruct (Nat.eqb l0 l) eqn:Heqb.
+    intros x' H2. left. simpl. destruct (Nat.eqb l0 l) eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb. congruence.
     + reflexivity.
   - (* eval_sum_inr *)
-    intro H2. left. unfold heap_add. destruct (Nat.eqb l0 l) eqn:Heqb.
+    intros x' H2. left. simpl. destruct (Nat.eqb l0 l) eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb. congruence.
     + reflexivity.
   - (* eval_sum_match_inl *)
-    intro H2. destruct (Nat.eqb l0 l) eqn:Heqb.
-    + rewrite Nat.eqb_eq in Heqb. subst.
-      assert (H3 : heap_add h (l, vbad) l <> None).
-      { unfold heap_add. rewrite Nat.eqb_refl. congruence. }
-      apply IHeval in H3. destruct H3 as [H3 | H3].
-      * rewrite H3. simpl. rewrite Nat.eqb_refl. auto.
-      * auto.
-    + assert (H3 : heap_add h (l0, vbad) l <> None).
-      { unfold heap_add. rewrite Heqb. assumption. }
-      apply IHeval in H3. destruct H3 as [H3 | H3].
-      * left. rewrite H3. unfold heap_add. rewrite Heqb. reflexivity.
-      * right. assumption.
+    intros x' H2. destruct (Nat.eqb l0 l) eqn:Heqb.
+    + rewrite Nat.eqb_eq in Heqb; subst.
+      destruct (IHeval _ (heap_add_lookup_refl h l vbad));
+        eauto using new_heap_lookup.
+    + destruct (IHeval _ (new_heap_lookup_diff h l l0 x' vbad Heqb H2));
+        eauto using new_heap_lookup2.
   - (* eval_sum_match_inr *)
-    intro H2. destruct (Nat.eqb l0 l) eqn:Heqb.
-    + rewrite Nat.eqb_eq in Heqb. subst.
-      assert (H3 : heap_add h (l, vbad) l <> None).
-      { unfold heap_add. rewrite Nat.eqb_refl. congruence. }
-      apply IHeval in H3. destruct H3 as [H3 | H3].
-      * rewrite H3. simpl. rewrite Nat.eqb_refl. right. reflexivity.
-      * auto.
-    + assert (H3 : heap_add h (l0, vbad) l <> None).
-      { unfold heap_add. rewrite Heqb. assumption. }
-      apply IHeval in H3. destruct H3 as [H3 | H3].
-      * left. rewrite H3. unfold heap_add. rewrite Heqb. reflexivity.
-      * right. assumption.
+    intros x' H2. destruct (Nat.eqb l0 l) eqn:Heqb.
+    + rewrite Nat.eqb_eq in Heqb; subst.
+      destruct (IHeval _ (heap_add_lookup_refl h l vbad));
+        eauto using new_heap_lookup.
+    + destruct (IHeval _ (new_heap_lookup_diff h l l0 x' vbad Heqb H2));
+        eauto using new_heap_lookup2.
   - (* eval_list_cons *)
-    intro H3. destruct (Nat.eqb l0 l) eqn:Heqb.
+    intros x' H3. destruct (Nat.eqb l0 l) eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb. congruence.
-    + unfold heap_add. rewrite Heqb. auto.
+    + simpl. rewrite Heqb. auto.
   - (* eval_list_match_cons *)
-    intro H3. destruct (Nat.eqb l0 l) eqn:Heqb.
-    + rewrite Nat.eqb_eq in Heqb. subst.
-      assert (H4 : heap_add h (l, vbad) l <> None).
-      { unfold heap_add. rewrite Nat.eqb_refl. congruence. }
-      apply IHeval in H4. destruct H4 as [H4 | H4].
-      * right. rewrite H4. simpl. rewrite Nat.eqb_refl. reflexivity.
-      * right. assumption.
-    + assert (H4 : heap_add h (l0, vbad) l <> None).
-      { unfold heap_add. rewrite Heqb. assumption. }
-      apply IHeval in H4. destruct H4 as [H4 | H4].
-      * rewrite H4. unfold heap_add. rewrite Heqb. auto.
-      * auto.
+    intros x' H3. destruct (Nat.eqb l0 l) eqn:Heqb.
+    + rewrite Nat.eqb_eq in Heqb; subst.
+      destruct (IHeval _ (heap_add_lookup_refl h l vbad));
+        eauto using new_heap_lookup.
+    + destruct (IHeval _ (new_heap_lookup_diff h l l0 x' vbad Heqb H3));
+        eauto using new_heap_lookup2.
 Qed.
 
 Lemma heap_stability_domain : forall p s h e v h',
   eval p s h e v h' ->
-  forall l, h l <> None -> h' l <> None.
+  forall l x, h l = Some x -> exists x', h' l = Some x'.
 Proof.
-  intros p s h e v h' EVAL l H.
+  intros p s h e v h' EVAL l x H.
   eapply heap_stability in EVAL; try eassumption.
   destruct EVAL as [H2 | H2].
-  - rewrite H2. assumption.
-  - rewrite H2. congruence.
+  - rewrite H2. exists x. assumption.
+  - rewrite H2. exists vbad. reflexivity.
 Qed.
 
 (* Definition 4.9 *)
