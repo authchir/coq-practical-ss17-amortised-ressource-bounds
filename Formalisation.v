@@ -2,6 +2,7 @@ Require Import Coq.Strings.String.
 Require Import Coq.Vectors.Vector.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Arith.Arith.
+Require Import Coq.omega.Omega.
 (* Require Import Coq.FSets.FMaps. *)
 
 Definition var := nat.
@@ -937,3 +938,22 @@ Inductive evalR : program -> stack -> heap -> nat -> nat -> expr -> val ->
     evalR p s' (heap_add h (l, vbad)) (m + size w) m' e2 v h' ->
     evalR p s h m m' (elist_match x e1 (xh, xt, e2)) v h'
 .
+
+(* Lemma 4.18 *)
+Lemma additional_memory : forall (p : program) (s : stack) (h h' : heap)
+  (m m' : nat) (e : expr) (v : val),
+  evalR p s h m m' e v h' ->
+  forall (k : nat), evalR p s h (m + k) (m' + k) e v h'.
+Proof.
+  assert (PLUS : forall a b c, a + b + c = (a + c) + b). { intros. omega. }
+  intros p s h h' m m' e v EVAL k.
+  induction EVAL; try rewrite PLUS in *; try eauto using evalR.
+Qed.
+
+
+
+
+
+
+
+
