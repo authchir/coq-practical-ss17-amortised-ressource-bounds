@@ -1,8 +1,10 @@
 Require Import Coq.Strings.String.
-Require Import Coq.Vectors.Vector.
+Require Coq.Vectors.Vector.
 Require Import Coq.Logic.FunctionalExtensionality.
 Require Import Coq.Arith.Arith.
 Require Import Coq.omega.Omega.
+Require Import Coq.Lists.List.
+Require Import ListUtil.
 (* Require Import Coq.FSets.FMaps. *)
 
 Definition var := nat.
@@ -113,11 +115,13 @@ Inductive has_type : prog_sig -> context -> expr -> type0 -> Prop :=
     has_type Sigma Gamma (eapp f xs) C
 
 | has_type_if : forall Sigma Gamma x et ef C,
+    Gamma x = None ->
     has_type Sigma Gamma et C ->
     has_type Sigma Gamma ef C ->
     has_type Sigma (context_add Gamma (x, tbool)) (eif x et ef) C
 
 | has_type_pair : forall Sigma x1 x2 A B,
+    x1 <> x2 ->
     let Gamma := context_add (context_add context_empty (x1, A)) (x2, B) in
     has_type Sigma Gamma (epair x1 x2) (tpair A B)
 
@@ -129,14 +133,13 @@ Inductive has_type : prog_sig -> context -> expr -> type0 -> Prop :=
     has_type Sigma (context_add context_empty (x, A)) (esum_inl x) (tsum A B)
 
 | has_type_sum_inr : forall Sigma x A B,
-    has_type Sigma (context_add context_empty (x, B)) (esum_inl x) (tsum A B)
+    has_type Sigma (context_add context_empty (x, B)) (esum_inr x) (tsum A B)
 
 | has_type_sum_match : forall Sigma Gamma x y z el er A B C,
     has_type Sigma (context_add Gamma (y, A)) el C ->
     has_type Sigma (context_add Gamma (z, B)) er C ->
     has_type Sigma (context_add Gamma (x, tsum A B))
       (esum_match x (y, el) (z, er)) C
-
 
 | has_type_sum_match_elim : forall Sigma Gamma x y z el er A B C,
     has_type Sigma (context_add Gamma (y, A)) el C ->
@@ -166,6 +169,7 @@ Inductive has_type : prog_sig -> context -> expr -> type0 -> Prop :=
 (* Structural Rules *)
 
 | has_type_weak : forall Sigma Gamma x e A C,
+    Gamma x = None ->
     has_type Sigma Gamma e C ->
     has_type Sigma (context_add Gamma (x, A)) e C
 
@@ -181,6 +185,7 @@ Inductive has_type : prog_sig -> context -> expr -> type0 -> Prop :=
 Definition program := var -> list var * expr.
 
 Definition loc := nat.
+Definition loc_dec := Nat.eq_dec.
 
 Inductive val : Type :=
 | vunit : val
@@ -271,28 +276,32 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
     h l = None ->
     eval p s h (esum_inr x) (vloc l) (heap_add h (l, w))
 
-| eval_sum_match_inl : forall p s h h' l x y z w el er v,
+| eval_sum_match_inl : forall p s h h' l x y z w w' el er v,
     s x = Some (vloc l) ->
-    h l = Some (vpair vtt w) ->
-    eval p (stack_add s (y, Some w)) h el v h' ->
+    h l = Some w ->
+    w = vpair vtt w' ->
+    eval p (stack_add s (y, Some w')) h el v h' ->
     eval p s h (esum_match x (y, el) (z, er)) v h'
 
-| eval_sum_match_elim_inl : forall p s h h' l x y z w el er v,
+| eval_sum_match_elim_inl : forall p s h h' l x y z w w' el er v,
     s x = Some (vloc l) ->
-    h l = Some (vpair vtt w) ->
-    eval p (stack_add s (y, Some w)) (heap_add h (l, vbad)) el v h' ->
+    h l = Some w ->
+    w = vpair vtt w' ->
+    eval p (stack_add s (y, Some w')) (heap_add h (l, vbad)) el v h' ->
     eval p s h (esum_match_elim x (y, el) (z, er)) v h'
 
-| eval_sum_match_inr : forall p s h h' l x y z w el er v,
+| eval_sum_match_inr : forall p s h h' l x y z w w' el er v,
     s x = Some (vloc l) ->
-    h l = Some (vpair vff w) ->
-    eval p (stack_add s (z, Some w)) h er v h' ->
+    h l = Some w ->
+    w = vpair vff w' ->
+    eval p (stack_add s (z, Some w')) h er v h' ->
     eval p s h (esum_match x (y, el) (z, er)) v h'
 
-| eval_sum_match_elim_inr : forall p s h h' l x y z w el er v,
+| eval_sum_match_elim_inr : forall p s h h' l x y z w w' el er v,
     s x = Some (vloc l) ->
-    h l = Some (vpair vff w) ->
-    eval p (stack_add s (z, Some w)) (heap_add h (l, vbad)) er v h' ->
+    h l = Some w ->
+    w = vpair vff w' ->
+    eval p (stack_add s (z, Some w')) (heap_add h (l, vbad)) er v h' ->
     eval p s h (esum_match_elim x (y, el) (z, er)) v h'
 
 | eval_list_nil : forall p s h,
@@ -315,16 +324,20 @@ Inductive eval : program -> stack -> heap -> expr -> val -> heap -> Prop :=
     eval p s h e1 v h' -> 
     eval p s h (elist_match x e1 (xh, xt, e2)) v h'
 
-| eval_list_match_cons : forall p s h h' l x xh xt wh wt e1 e2 v,
+| eval_list_match_cons : forall (p : program) (s : stack) (h h' : heap)
+    (l : loc) (x xh xt : var) (w wh wt : val) (e1 e2 : expr) (v : val),
     s x = Some (vloc l) ->
-    h l = Some (vpair wh wt) ->
+    h l = Some w ->
+    w = (vpair wh wt) ->
     eval p (stack_add (stack_add s (xh, Some wh)) (xt, Some wt)) h e2 v h' ->
     eval p s h (elist_match x e1 (xh, xt, e2)) v h'
 
-| eval_list_match_elim_cons : forall p s h h' l x xh xt wh wt e1 e2 v,
+| eval_list_match_elim_cons : forall (p : program) (s s' : stack) (h h' : heap)
+    (l : loc) (x xh xt : var) (w wh wt : val) (e1 e2 : expr) (v : val),
     s x = Some (vloc l) ->
-    h l = Some (vpair wh wt) ->
-    let s' := stack_add (stack_add s (xh, Some wh)) (xt, Some wt) in
+    h l = Some w ->
+    w = (vpair wh wt) ->
+    s' = stack_add (stack_add s (xh, Some wh)) (xt, Some wt) ->
     eval p s' (heap_add h (l, vbad)) e2 v h' ->
     eval p s h (elist_match x e1 (xh, xt, e2)) v h'
 .
@@ -395,29 +408,29 @@ Proof.
     + rewrite Nat.eqb_eq in Heqb. congruence.
     + reflexivity.
   - (* eval_sum_match_inl *)
-    intros l' x' H2. destruct (Nat.eqb l l') eqn:Heqb.
+    intros l' x' HEAP_DOM. destruct (Nat.eqb l l') eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb; subst.
       destruct (IHeval _ _ (heap_add_lookup_refl h l' vbad));
         eauto using new_heap_lookup.
-    + destruct (IHeval _ _ (new_heap_lookup_diff h l' l x' vbad Heqb H2));
+    + destruct (IHeval _ _ (new_heap_lookup_diff h l' l x' vbad Heqb HEAP_DOM));
         eauto using new_heap_lookup2.
   - (* eval_sum_match_inr *)
-    intros l' x' H2. destruct (Nat.eqb l l') eqn:Heqb.
+    intros l' x' HEAP_DOM. destruct (Nat.eqb l l') eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb; subst.
       destruct (IHeval _ _ (heap_add_lookup_refl h l' vbad));
         eauto using new_heap_lookup.
-    + destruct (IHeval _ _ (new_heap_lookup_diff h l' l x' vbad Heqb H2));
+    + destruct (IHeval _ _ (new_heap_lookup_diff h l' l x' vbad Heqb HEAP_DOM));
         eauto using new_heap_lookup2.
   - (* eval_list_cons *)
-    intros l' x' H3. destruct (Nat.eqb l l') eqn:Heqb.
+    intros l' x' HEAP_DOM. destruct (Nat.eqb l l') eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb. congruence.
     + simpl. rewrite Heqb. auto.
   - (* eval_list_match_cons *)
-    intros l' x' H3. destruct (Nat.eqb l l') eqn:Heqb.
+    intros l' x' HEAP_DOM. destruct (Nat.eqb l l') eqn:Heqb.
     + rewrite Nat.eqb_eq in Heqb; subst.
       destruct (IHeval _ _ (heap_add_lookup_refl h l' vbad));
         eauto using new_heap_lookup.
-    + destruct (IHeval _ _ (new_heap_lookup_diff h l' l x' vbad Heqb H3));
+    + destruct (IHeval _ _ (new_heap_lookup_diff h l' l x' vbad Heqb HEAP_DOM));
         eauto using new_heap_lookup2.
 Qed.
 
@@ -432,17 +445,44 @@ Proof.
   - rewrite H2. exists vbad. reflexivity.
 Qed.
 
-Lemma Some_implies_not_None : forall {A : Set} (o : option A) (x : A),
+Lemma Some_implies_not_None : forall (A : Set) (o : option A) (x : A),
   o = Some x -> o <> None.
 Proof. congruence. Qed.
 
-Lemma not_None_implies_Some : forall {A : Set} (o : option A),
+Lemma not_None_implies_Some : forall (A : Set) (o : option A),
   o <> None -> exists (x : A), o = Some x.
 Proof.
   intros A o H.
   destruct o.
   - exists a. reflexivity.
   - congruence.
+Qed.
+
+Lemma heap_stability_domain' : forall p s h e v h',
+  eval p s h e v h' ->
+  forall l, h l <> None -> h' l <> None.
+Proof.
+  intros p s h e v h' EVAL l H.
+  apply not_None_implies_Some in H.
+  destruct H as [x H].
+  eapply heap_stability in EVAL as [H1 | H2].
+  - rewrite H1. eauto using Some_implies_not_None.
+  - eauto using Some_implies_not_None.
+  - eassumption.
+Qed.
+
+Definition heap_is_in_dom (h : heap) (l : loc) : Prop := h l <> None.
+Definition is_dealloc (h : heap) (l : loc) : Prop := h l = Some vbad.
+Definition dealloc (h : heap) (l : loc) : heap := heap_add h (l, vbad).
+
+Lemma heap_stability_list_deallocations : forall p s h e v h',
+  eval p s h e v h' ->
+  exists (ls : list loc),
+  Forall (heap_is_in_dom h) ls /\ Forall (is_dealloc h') ls.
+Proof.
+  intros p s h e v h' EVAL.
+  exists nil.
+  auto.
 Qed.
 
 (* Definition 4.9 *)
@@ -495,8 +535,51 @@ Definition mem_consistant_stack (h : heap) (s : stack) (Gamma : context) :=
 Definition context_is_subset (c c' : context) : Prop :=
   forall x v, c x = Some v -> c' x = Some v.
 
+Lemma context_is_subset_refl : forall (c : context),
+  context_is_subset c c.
+Proof.
+  unfold context_is_subset. trivial.
+Qed.
+
+Lemma context_is_subset_add : forall (c : context) (x : var) (t : type0),
+  c x = None -> context_is_subset c (context_add c (x, t)).
+Proof.
+  intros.
+  unfold context_is_subset.
+  intros x0 v CONTEXT_DOM.
+  unfold context_add.
+  destruct (Nat.eqb x0 x) eqn:Eqn.
+  - rewrite Nat.eqb_eq in Eqn.
+    subst x0. congruence.
+  - assumption.
+Qed.
+
 Definition stack_is_subset (s s' : stack) : Prop :=
   forall x v, s x = Some v -> s' x = Some v.
+
+Lemma stack_is_subset_refl : forall (s : stack),
+  stack_is_subset s s.
+Proof.
+  unfold stack_is_subset. trivial.
+Qed.
+
+Lemma stack_is_subset_trans : forall (s1 s2 s3 : stack),
+  stack_is_subset s1 s2 -> stack_is_subset s2 s3 -> stack_is_subset s1 s3.
+Proof.
+  unfold stack_is_subset. auto.
+Qed.
+
+Lemma stack_is_subset_add : forall s x v,
+  s x = None -> stack_is_subset s (stack_add s (x, Some v)).
+Proof.
+  intros.
+  unfold stack_is_subset.
+  intros x0 v0 STACK_DOM.
+  simpl.
+  destruct (Nat.eqb x x0) eqn:Eqn.
+  - rewrite Nat.eqb_eq in Eqn. congruence.
+  - assumption.
+Qed.
 
 Lemma heap_is_subset_remove : forall (h h' : heap) (l : loc),
   heap_is_subset h h' ->
@@ -672,26 +755,283 @@ Proof.
     + reflexivity.
     + assumption.
 Qed.
+
+Check   List.fold_left.
+
+Lemma deallocation_consistency_ind :
+  forall (h : heap) (s : stack) (Gamma : context),
+  mem_consistant_stack h s Gamma ->
+  forall (ls : list loc),
+  Forall (heap_is_in_dom h) ls ->
+  let h' := List.fold_left (fun h l => heap_add h (l, vbad)) ls h in
+  mem_consistant_stack h' s Gamma.
+Proof.
+Admitted.
+
 Lemma deallocation_consistency' :
   forall (h : heap) (s : stack) (Gamma : context),
   mem_consistant_stack h s Gamma ->
-  forall (l : loc) (x : val),
-  h l = Some x ->
+  forall (l : loc),
+  h l <> None ->
   mem_consistant_stack (heap_add h (l, vbad)) s Gamma.
 Proof.
-  intros h s Gamma MEM_CONS l x.
+  intros h s Gamma MEM_CONS l H.
+  apply not_None_implies_Some in H.
+  destruct H.
   eauto using deallocation_consistency.
 Qed.
 
+Lemma heap_add_remove_new_loc : forall h l v,
+  h l = None -> heap_remove (heap_add h (l, v)) l = h.
+Proof.
+  intros.
+  unfold heap_remove, heap_add.
+  extensionality y.
+  destruct (Nat.eqb l y) eqn:Eqn.
+  - rewrite Nat.eqb_eq in *. subst. auto.
+  - reflexivity.
+Qed.
+
+Lemma context_add_lookup : forall (Gamma : context) (x : var) (t : type0),
+  context_add Gamma (x, t) x = Some t.
+Proof.
+  intros.
+  simpl. rewrite Nat.eqb_refl. reflexivity.
+Qed.
+
+Definition heap_add_all (h : heap) (xs : list (loc * val)) : heap :=
+  List.fold_left heap_add xs h.
+Definition heap_dealloc_all (h : heap) (xs : list loc) : heap :=
+  List.fold_left dealloc xs h.
+Definition heap_fresh_location (h : heap) (lv : loc * val) :=
+  let (l, v) := lv in ~heap_is_in_dom h l.
+Definition heap_existing_location (h : heap) (lv : loc * val) :=
+  let (l, v) := lv in heap_is_in_dom h l.
+
+Lemma heap_add_lookup_distinct' : forall l x,
+  l <> x ->
+  forall h v,
+  heap_add h (l, v) x = h x.
+Proof.
+  intros l x DISTINCT h v.
+  simpl.
+  rewrite <- Nat.eqb_neq in DISTINCT.
+  rewrite DISTINCT.
+  reflexivity.
+Qed.
+
+Lemma heap_add_all_lookup_distinct' : forall x ls,
+  Forall (fun l => l <> x) ls ->
+  forall vs zs,
+  Zip ls vs zs ->
+  forall h,
+  heap_add_all h zs x = h x.
+Proof.
+  intros x ls ALL_DISTINCT.
+  induction ALL_DISTINCT; intros vs zs ZIP h.
+  - inversion ZIP; subst.
+    reflexivity.
+  - inversion ZIP; subst.
+    simpl.
+    erewrite IHALL_DISTINCT; try eassumption.
+    apply heap_add_lookup_distinct'.
+    assumption.
+Qed.
+
+Lemma heap_add_lookup_distinct'' :
+  forall x xs, ~In x xs ->
+  forall ys zs, Zip xs ys zs ->
+  forall h, heap_add_all h zs x = h x.
+Proof.
+  intros x xs H1 ys zs ZIP.
+  induction ZIP.
+  - reflexivity.
+  - intros h. simpl in *. rewrite IHZIP.
+    + simpl. destruct (Nat.eqb x0 x) eqn:Heqn.
+      * apply Nat.eqb_eq in Heqn.
+        exfalso. auto.
+      * reflexivity.
+    + auto.
+Qed.
+
+Lemma heap_add_all_add' : forall (h : heap) ls,
+  Forall (fun l => ~heap_is_in_dom h l) ls ->
+  forall vs zs,
+  Zip ls vs zs ->
+  forall l,
+  ~heap_is_in_dom h l ->
+  Forall (fun x => x <> l) ls ->
+  forall v,
+  heap_add_all (heap_add h (l, v)) zs = heap_add (heap_add_all h zs) (l, v).
+Proof.
+  intros h ls ALL_FRESH.
+  induction ALL_FRESH; intros vs zs ZIP; inversion ZIP; subst; clear ZIP.
+  - reflexivity.
+  - intros l0 FRESH ALL_DISTINCT v.
+    inversion ALL_DISTINCT; subst; clear ALL_DISTINCT.
+    simpl.
+    extensionality a.
+    simpl.
+    destruct (Nat.eqb l0 a) eqn:Heqn1.
+    + apply Nat.eqb_eq in Heqn1; subst.
+      rewrite (heap_add_all_lookup_distinct' _ _ H3 _ _ H4).
+      rewrite (heap_add_lookup_distinct' _ _ H2).
+      apply heap_add_lookup_refl.
+    + destruct (in_dec Nat.eq_dec a l).
+      * specialize (IHALL_FRESH _ _ H4 _ FRESH H3).
+        assert (FOO :
+          forall x xs, In x xs ->
+          forall ys zs, Zip xs ys zs ->
+          forall h1 h2, heap_add_all h1 zs x = heap_add_all h2 zs x). {
+          clear.
+          intros x xs.
+          induction xs; intros H ys zs ZIP h1 h2.
+          - exfalso. assumption.
+          - inversion ZIP; subst; clear ZIP.
+            simpl in *. destruct H as [H | H].
+            + subst.
+              assert (DISTINCT : ~ In x xs). admit.
+              repeat erewrite heap_add_lookup_distinct''; try eassumption.
+              repeat rewrite heap_add_lookup_refl.
+              reflexivity.
+            + eapply IHxs; try eassumption.
+        }
+        eapply FOO; eauto.
+      * repeat rewrite (heap_add_lookup_distinct'' _ _ n _ _ H4).
+        simpl. rewrite Heqn1. reflexivity.
+Admitted.
+
+Lemma heap_is_subset_add_all_fresh : forall h xs,
+    Forall (fun x => ~ heap_is_in_dom h x) xs ->
+    forall ys zs, Zip xs ys zs ->
+    heap_is_subset h (heap_add_all h zs).
+Proof.
+  intros h xs ALL_FRESH.
+  induction xs; intros ys zs ZIP.
+  - inversion ZIP; subst; clear ZIP.
+    auto using heap_is_subset_refl.
+  - inversion ZIP; subst; clear ZIP.
+    inversion ALL_FRESH; subst; clear ALL_FRESH.
+    specialize (IHxs H2 _ _ H3).
+    intros x v HEAP_DOM.
+    simpl.
+    specialize (IHxs _ _ HEAP_DOM).
+    Check heap_add_all_add'.
+    erewrite heap_add_all_add'; try eassumption.
+    + unfold heap_add.
+      rewrite IHxs.
+      destruct (Nat.eqb a x) eqn:Heqn.
+      * apply Nat.eqb_eq in Heqn.
+        subst. unfold heap_is_in_dom in H1.
+        apply Some_implies_not_None in HEAP_DOM.
+        exfalso.
+        auto.
+      * reflexivity.
+    + admit. (* True if the elements of the list are unique *)
+Admitted.
+
+Lemma mem_consistant_stack_heap_add_all : forall h s G,
+  mem_consistant_stack h s G ->
+  forall xs, Forall (fun x => ~ heap_is_in_dom h x) xs ->
+  forall ys zs, Zip xs ys zs ->
+  mem_consistant_stack (heap_add_all h zs) s G.
+Proof.
+  intros h s G MEM_CONS xs ALL_FRESH ys zs ZIP.
+  eapply mem_consistancy_closure;
+    eauto using
+      heap_is_subset_add_all_fresh,
+      stack_is_subset_refl,
+      context_is_subset_refl.
+Qed.
+
+Lemma mem_consistant_stack_heap_dealloc_all :
+  forall h s G, mem_consistant_stack h s G ->
+  forall xs, Forall (heap_is_in_dom h) xs ->
+  mem_consistant_stack (heap_dealloc_all h xs) s G.
+Proof.
+  intros h s G MEM_CONS xs DOM.
+  generalize dependent h.
+  induction xs.
+  - intros. assumption.
+  - intros h MEM_CONS DOM. simpl.
+    inversion DOM; subst; clear DOM.
+    apply IHxs.
+    + eauto using deallocation_consistency'.
+    + admit. (* True if the elements of the list are unique. *)
+Admitted.
+
+Lemma heap_is_in_dom_after_dealloc : forall x h l,
+  heap_is_in_dom h x ->
+  heap_is_in_dom h l ->
+  heap_is_in_dom (dealloc h l) x.
+Proof.
+  intros x h b H1 H2.
+  unfold heap_is_in_dom, dealloc in *.
+  simpl.
+  destruct (Nat.eqb b x); congruence.
+Qed.
+
+Lemma heap_is_in_dom_forall_after_dealloc : forall xs h l,
+  Forall (heap_is_in_dom h) xs ->
+  heap_is_in_dom h l ->
+  Forall (heap_is_in_dom (dealloc h l)) xs.
+Proof.
+  induction xs; intros h b H1 H2.
+  - constructor.
+  - inversion H1; clear H1; subst.
+    auto using heap_is_in_dom_after_dealloc.
+Qed.
+
+Lemma heap_is_not_in_dom_after_dealloc : forall x h l,
+  ~ heap_is_in_dom h x ->
+  heap_is_in_dom h l ->
+  ~heap_is_in_dom (dealloc h l) x.
+Proof.
+  intros x h b H1 H2.
+  unfold heap_is_in_dom, dealloc in *.
+  simpl.
+  destruct (Nat.eqb b x) eqn:Heqn.
+  - intro H3.
+    apply Nat.eqb_eq in Heqn.
+    subst.
+    auto.
+  - assumption.
+Qed.
+
+Lemma heap_is_not_in_dom_after_dealloc_all : forall ys h x,
+  Forall (heap_is_in_dom h) ys ->
+  ~ heap_is_in_dom h x ->
+  ~ heap_is_in_dom (heap_dealloc_all h ys) x.
+Proof.
+  induction ys; simpl; intros h x H1 H2.
+  - assumption.
+  - inversion H1; subst; clear H1.
+    apply IHys.
+    + auto using heap_is_in_dom_forall_after_dealloc.
+    + auto using heap_is_not_in_dom_after_dealloc.
+Qed.
+
+Lemma heap_is_not_in_dom_forall_after_dealloc_all : forall h xs ys,
+  Forall (fun x => ~ heap_is_in_dom h x) xs ->
+  Forall (heap_is_in_dom h) ys ->
+  Forall (fun x => ~ heap_is_in_dom (heap_dealloc_all h ys) x) xs.
+Proof.
+  intros h xs. generalize dependent h.
+  induction xs; intros h ys ALL_FRESH H1.
+  - constructor.
+  - inversion ALL_FRESH; subst; clear ALL_FRESH.
+    auto using heap_is_not_in_dom_after_dealloc_all.
+Qed.
+
 (* Lemma 4.13 *)
-Lemma preservation : forall (Sigma : prog_sig) (Gamma : context) (p : program)
+Lemma preservation : forall (l : loc) (Sigma : prog_sig) (Gamma : context) (p : program)
   (s : stack) (h h' : heap) (e : expr) (c : type0) (v : val),
   (* 4.1 *) has_type Sigma Gamma e c ->
   (* 4.2 *) eval p s h e v h' ->
   (* 4.3 *) mem_consistant_stack h s Gamma ->
   (* 4.a *) mem_consistant h' v c /\ (* 4.b *) mem_consistant_stack h' s Gamma.
 Proof.
-  intros Sigma Gamma p s h h' e c v WELL_TYPED EVAL. split.
+  intros l Sigma Gamma p s h h' e c v WELL_TYPED EVAL. split.
   - generalize dependent s.
     generalize dependent h'.
     generalize dependent h.
@@ -702,33 +1042,120 @@ Proof.
     + inversion EVAL; subst. apply mem_cons_true.
     + inversion EVAL; subst. apply mem_cons_false.
     + inversion EVAL; subst. unfold mem_consistant_stack in MEM_CONS.
-      (* Here, the instanciation with x0:=x and t:=C leads to a trivial
-         hypothesis Some C = Some C.
-         Is there a way to get rid of this hypothesis without the following
-         assertion? *)
-      assert (H : context_add context_empty (x, C) x = Some C).
-      { simpl. rewrite Nat.eqb_refl. reflexivity. }
-      apply MEM_CONS in H as [v' [H1 H2]]. congruence.
+      specialize (MEM_CONS x C (context_add_lookup _ _ _)).
+      destruct MEM_CONS as [v' [H1 H2]]. congruence.
     + (* let x = e1 in e2 *)
-      assert (H1 : heap_is_subset h h). { unfold heap_is_subset. trivial. }
-      assert (H2 : stack_is_subset s s). { unfold stack_is_subset. trivial. }
+      assert (H1 := heap_is_subset_refl h).
+      assert (H2 := stack_is_subset_refl s).
       assert (H3 : context_is_subset Gamma1 (context_union Gamma1 Gamma2)).
       { unfold context_is_subset, context_union. intros. rewrite H. reflexivity. }
+      assert (H4 : context_is_subset Gamma2 (context_union Gamma1 Gamma2)).
+      { admit.
+      (* redefine context_union as a relation with hypothesis for disjoinct
+         domain *) }
       assert (MEM_CONS_Gamma1 := mem_consistancy_closure _ _ _ _ _ _ H1 H2 H3 MEM_CONS).
+      assert (MEM_CONS_Gamma2 := mem_consistancy_closure _ _ _ _ _ _ H1 H2 H4 MEM_CONS).
+      inversion EVAL; subst; clear EVAL.
+      specialize (IHWELL_TYPED1 _ _ _ _ _ H11 MEM_CONS_Gamma1).
+      (* with inductive version of lemma 4.8 and 4.12 *)
       admit.
     + admit.
+    + inversion EVAL; subst.
+      * eapply IHWELL_TYPED1;
+          eauto using
+            mem_consistancy_closure,
+            heap_is_subset_refl,
+            stack_is_subset_refl,
+            context_is_subset_add.
+      * eapply IHWELL_TYPED2;
+          eauto using mem_consistancy_closure,
+            heap_is_subset_refl,
+            stack_is_subset_refl,
+            context_is_subset_add.
+    + inversion EVAL; subst.
+      unfold mem_consistant_stack in MEM_CONS.
+      subst Gamma.
+      apply mem_cons_pair.
+      * specialize (MEM_CONS x1 A); simpl in MEM_CONS.
+        Search (Nat.eqb _ _ = false).
+        rewrite <- Nat.eqb_neq in H.
+        rewrite H in MEM_CONS.
+        rewrite Nat.eqb_refl in MEM_CONS.
+        specialize (MEM_CONS eq_refl).
+        destruct MEM_CONS as [v [STACK_DOM MEM_CONS]].
+        rewrite STACK_DOM in H5.
+        injection H5; intros; subst.
+        assumption.
+      * specialize (MEM_CONS x2 B); simpl in MEM_CONS.
+        rewrite <- Nat.eqb_neq in H.
+        rewrite Nat.eqb_sym in H.
+        rewrite H in MEM_CONS.
+        rewrite Nat.eqb_refl in MEM_CONS.
+        specialize (MEM_CONS eq_refl).
+        destruct MEM_CONS as [v [STACK_DOM MEM_CONS]].
+        rewrite STACK_DOM in H8.
+        injection H8; intros; subst.
+        assumption.
+    + inversion EVAL; subst.
+      eapply IHWELL_TYPED.
+      * apply H9.
+      * assert (H1 : s x1 = None). admit.
+        assert (H2 : stack_add s (x1, Some v1) x2 = None). admit.
+        assert (H3 := stack_is_subset_add s x1 v1 H1).
+        assert (H4 := stack_is_subset_add (stack_add s (x1, Some v1)) x2 v2 H2).
+        assert (STACK_SUBSET := stack_is_subset_trans _ _ _ H3 H4).
+        admit.
+    + inversion EVAL; subst.
+      eapply mem_cons_sum_inl.
+      * rewrite heap_add_lookup_refl. reflexivity.
+      * rewrite (heap_add_remove_new_loc _ _ _ H5).
+        unfold mem_consistant_stack in *.
+        specialize (MEM_CONS x A).
+        simpl in MEM_CONS. rewrite Nat.eqb_refl in *.
+        specialize (MEM_CONS eq_refl).
+        destruct MEM_CONS as [v [STACK_DOM MEM_CONS]].
+        rewrite STACK_DOM in *.
+        injection H0. intros; subst.
+        assumption.
+    + inversion EVAL; subst.
+      eapply mem_cons_sum_inr.
+      * rewrite heap_add_lookup_refl. reflexivity.
+      * rewrite (heap_add_remove_new_loc _ _ _ H5).
+        unfold mem_consistant_stack in *.
+        specialize (MEM_CONS x B).
+        simpl in MEM_CONS. rewrite Nat.eqb_refl in *.
+        specialize (MEM_CONS eq_refl).
+        destruct MEM_CONS as [v [STACK_DOM MEM_CONS]].
+        rewrite STACK_DOM in *.
+        injection H0. intros; subst.
+        assumption.
     + admit.
     + admit.
+    + inversion EVAL; subst.
+      apply mem_cons_list_nil.
     + admit.
+    + inversion EVAL; subst.
+      * eapply IHWELL_TYPED1.
+        { apply H10. }
+        { admit. }
+      * eapply IHWELL_TYPED1.
+        { apply H10. }
+        { admit. }
+      * eapply IHWELL_TYPED2.
+        { apply H12. }
+        { admit. }
+      * eapply IHWELL_TYPED2.
+        { apply H13. }
+        { admit. }
     + admit.
-    + admit.
-    + admit.
-    + admit.
-    + admit.
-    + admit.
-    + admit.
-    + admit.
-    + admit.
+    + eapply IHWELL_TYPED.
+      * apply EVAL.
+      * Check mem_consistancy_closure.
+        assert (HEAP_SUBSET := heap_is_subset_refl h).
+        assert (STACK_SUBSET := stack_is_subset_refl s).
+        assert (DOM_SUBSET := context_is_subset_add Gamma x A H).
+        eauto using mem_consistancy_closure, heap_is_subset_refl,
+        stack_is_subset_refl, context_is_subset_add.
     + admit.
 (*
 heap_stability
@@ -750,17 +1177,76 @@ deallocation_consistency'
        forall (l : loc) (x : val),
        h l = Some x -> mem_consistant_stack (heap_add h (l, vbad)) s Gamma
 
+deallocation_consistency_ind
+     : forall (h : heap) (s : stack) (Gamma : context),
+       mem_consistant_stack h s Gamma ->
+       forall (ls : list loc) (xs : list val),
+       Forall2 (fun (l : loc) (x : val) => h l = Some x) ls xs ->
+       let h' :=
+         fold_left (fun (h0 : heap) (l : loc) => heap_add h0 (l, vbad)) ls h
+         in
+       mem_consistant_stack h' s Gamma
+
+
 *)
-  - assert (H2 := heap_stability _ _ _ _ _ _ EVAL).
+  - (* assert (H2 := heap_stability_list_deallocations _ _ _ _ _ _ EVAL).
+    destruct H2 as [ls [IN_HEAP WAS_DEALLOC]]. *)
+(*     assert (H2 := heap_stability _ _ _ _ _ _ EVAL). *)
+    
     assert (H3 := deallocation_consistency' _ _ _ H).
-    unfold mem_consistant_stack in *.
-    intros x t H4.
-    apply H in H4.
-    destruct H4 as [v' [H4 H5]].
-    exists v'.
-    split.
-    + assumption.
-    + admit.
+    
+    assert (BAZ : forall p s h e v h',
+      eval p s h e v h' ->
+      exists xs ys zs ws,
+      Zip xs ys zs /\
+      Forall (fun x : loc => ~ heap_is_in_dom h x) xs /\
+      Forall (heap_is_in_dom h) ws /\
+      h' = heap_add_all (heap_dealloc_all h ws) zs). {
+      clear.
+      intros p s h e v h' EVAL.
+      induction EVAL.
+      - exists nil, nil, nil, nil; auto using Zip_nil, eq_refl.
+      - exists nil, nil, nil, nil; auto using Zip_nil, eq_refl.
+      - exists nil, nil, nil, nil; auto using Zip_nil, eq_refl.
+      - exists nil, nil, nil, nil; auto using Zip_nil, eq_refl.
+      - destruct IHEVAL1
+          as [xs1 [ys1 [zs1 [ws1 [HZip1 [HNOT_DOM1 [HDOM1 Hh1]]]]]]].
+        destruct IHEVAL2
+          as [xs2 [ys2 [zs2 [ws2 [HZip2 [HNOT_DOM2 [HDOM2 Hh2]]]]]]].
+        exists (xs1 ++ xs2), (ys1 ++ ys2), (zs1 ++ zs2), (ws1 ++ ws2).
+        split. { auto using Zip_app. }
+        split. { apply Forall_app.
+          - assumption.
+          - clear HDOM2.
+            apply Forall_impl with (P := fun x => ~ heap_is_in_dom h0 x).
+            + intros l H3 H4.
+              unfold heap_is_in_dom in *.
+              eauto using heap_stability_domain'.
+            + assumption.
+        } split. { apply Forall_app.
+          - assumption.
+          - apply Forall_impl with (P := heap_is_in_dom h).
+            + auto.
+            + admit.
+        }
+      
+       
+(*       destruct (heap_stability_list_deallocations _ _ _ _ _ _ EVAL)
+        as [ws [H1 H2]]. *)
+      admit.
+    }
+    
+    destruct (BAZ _ _ _ _ _ _ EVAL)
+      as [xs [ys [zs [ws [ZIP [FRESH [OLD H'DEF]]]]]]].
+    subst.
+    eapply mem_consistant_stack_heap_add_all.
+    + apply mem_consistant_stack_heap_dealloc_all; assumption.
+    + apply heap_is_not_in_dom_forall_after_dealloc_all; eassumption.
+    + apply ZIP.
+    (* from H2 we show that there is a list of deallocated locations
+       from H3 we show the context with deallocated locations is memory consistant.
+       from mem_consistancy_closure we show that any allocated location is irrelevant.
+    *)
 Admitted.
 
 
@@ -871,31 +1357,35 @@ Inductive evalR : program -> stack -> heap -> nat -> nat -> expr -> val ->
     evalR p s h (m' + size w) m' (esum_inr x) (vloc l) (heap_add h (l, w))
 
 | evalR_sum_match_inl : forall (p : program) (s : stack) (h h' : heap) (l : loc)
-    (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    (x y z : var) (w w' : val) (el er : expr) (v : val) (m m' : nat),
     s x = Some (vloc l) ->
-    h l = Some (vpair vtt w) ->
-    evalR p (stack_add s (y, Some w)) h m m' el v h' ->
+    h l = Some w ->
+    w = vpair vtt w' ->
+    evalR p (stack_add s (y, Some w')) h m m' el v h' ->
     evalR p s h m m' (esum_match x (y, el) (z, er)) v h'
 
 | evalR_sum_match_elim_inl : forall (p : program) (s : stack) (h h' : heap)
-    (l : loc) (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    (l : loc) (x y z : var) (w w' : val) (el er : expr) (v : val) (m m' : nat),
     s x = Some (vloc l) ->
-    h l = Some (vpair vtt w) ->
-    evalR p (stack_add s (y, Some w)) (heap_add h (l, vbad)) (m + size w) m' el v h' ->
+    h l = Some w ->
+    w = vpair vtt w' ->
+    evalR p (stack_add s (y, Some w')) (heap_add h (l, vbad)) (m + size w) m' el v h' ->
     evalR p s h m m' (esum_match_elim x (y, el) (z, er)) v h'
 
 | evalR_sum_match_inr : forall (p : program) (s : stack) (h h' : heap) (l : loc)
-    (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    (x y z : var) (w w' : val) (el er : expr) (v : val) (m m' : nat),
     s x = Some (vloc l) ->
-    h l = Some (vpair vff w) ->
-    evalR p (stack_add s (z, Some w)) h m m' er v h' ->
+    h l = Some w ->
+    w = vpair vff w' ->
+    evalR p (stack_add s (z, Some w')) h m m' er v h' ->
     evalR p s h m m' (esum_match x (y, el) (z, er)) v h'
 
 | evalR_sum_match_elim_inr : forall (p : program) (s : stack) (h h' : heap)
-    (l : loc) (x y z : var) (w : val) (el er : expr) (v : val) (m m' : nat),
+    (l : loc) (x y z : var) (w w' : val) (el er : expr) (v : val) (m m' : nat),
     s x = Some (vloc l) ->
-    h l = Some (vpair vff w) ->
-    evalR p (stack_add s (z, Some w)) (heap_add h (l, vbad)) (m + size w) m' er v h' ->
+    h l = Some w ->
+    w = vpair vff w' ->
+    evalR p (stack_add s (z, Some w')) (heap_add h (l, vbad)) (m + size w) m' er v h' ->
     evalR p s h m m' (esum_match_elim x (y, el) (z, er)) v h'
 
 | evalR_list_nil : forall (p : program) (s : stack) (h : heap) (m : nat),
@@ -962,16 +1452,36 @@ Proof.
 Qed.
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+(* Lemma 4.20 *)
+Lemma finite_evaluation_cost : forall (p : program) (s : stack) (h h' : heap)
+  (e : expr) (v : val),
+  eval p s h e v h' ->
+  exists (m m' : nat), evalR p s h m m' e v h'.
+Proof.
+  assert (plus_n_minus_n : forall a b, a >= b -> a - b + b = a).
+  { clear. intros. omega. }
+  intros p s h h' e v EVAL.
+  induction EVAL; try destruct IHEVAL as [m [m' IHEVAL]]; try eauto using evalR.
+  - destruct IHEVAL1 as [m1 [m2 IHEVAL1]].
+    destruct IHEVAL2 as [m3 [m4 IHEVAL2]].
+    apply additional_memory with (k := m3) in IHEVAL1.
+    apply additional_memory with (k := m2) in IHEVAL2.
+    rewrite Nat.add_comm in IHEVAL2.
+    eauto using evalR_let.
+  - (* We must define the size of the heap, and |h| + m is the total amount of
+       potention we have *)
+    exists m, m'.
+    eapply evalR_sum_match_elim_inl; try eassumption.
+    rewrite (plus_n_O m').
+    eapply additional_memory.
+    rewrite plus_n_minus_n; try assumption.
+    admit.
+  - exists (m - size w), m'.
+    eapply evalR_sum_match_elim_inr; try eassumption.
+    rewrite plus_n_minus_n; try assumption.
+    admit.
+  - exists (m - size w), m'.
+    eapply evalR_list_match_elim_cons; try eassumption.
+    rewrite plus_n_minus_n; try assumption.
+    admit.
+Admitted.
